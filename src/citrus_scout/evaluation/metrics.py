@@ -6,7 +6,7 @@ predicts "healthy" is right 98% of the time while detecting nothing.
 
 Worse, a model with high sensitivity and specificity can still be unusable in
 practice, because what reaches the field technician is the set of predicted
-positives — and most of them may be false. That is the number that decides
+positives, and most of them may be false. That is the number that decides
 whether the product is viable: the **positive predictive value** at the real
 field prevalence.
 """
@@ -50,7 +50,7 @@ def ppv_at_prevalence(sensitivity: float, specificity: float, prevalence: float)
     prevalence, which is where the system will actually operate.
 
     Worked example: at 90% sensitivity, 90% specificity and 2% prevalence the PPV
-    is 15.5% — roughly 6 out of every 7 alerts would be false. Raising specificity
+    is 15.5%: roughly 6 out of every 7 alerts would be false. Raising specificity
     to 99% lifts the PPV to ~65%.
 
     >>> round(ppv_at_prevalence(0.90, 0.90, 0.02), 3)
