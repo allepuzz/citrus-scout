@@ -48,7 +48,7 @@ def freeze_backbone(model: nn.Module) -> None:
     that can wreck pre-trained features in the first few hundred steps.
     """
     classifier = model.get_classifier()
-    classifier_params = set(id(p) for p in classifier.parameters())
+    classifier_params = {id(p) for p in classifier.parameters()}
 
     for param in model.parameters():
         param.requires_grad = id(param) in classifier_params
@@ -58,6 +58,44 @@ def unfreeze_all(model: nn.Module) -> None:
     """Make every parameter trainable again."""
     for param in model.parameters():
         param.requires_grad = True
+
+
+def enable_mc_dropout(model: nn.Module) -> None:
+    """Put the model in eval mode but keep dropout active, for MC Dropout sampling.
+
+    The usual recipe is to find every `nn.Dropout` module and set it to train mode.
+    That does not work for timm's EfficientNet: it stores `drop_rate` as an attribute
+    and applies dropout functionally inside `forward_head`, so there is no module to
+    toggle. The functional call keys off `self.training`, which means the whole model
+    has to be in train mode for dropout to fire.
+
+    That is safe here only because this architecture's other train-mode behaviour,
+    BatchNorm updating its running statistics, is disabled separately below. Get this
+    wrong and the uncertainty estimates are computed by a model whose normalisation
+    statistics are drifting with every forward pass.
+    """
+    model.train()
+    for module in model.modules():
+        # BatchNorm in train mode would update running statistics during inference.
+        if isinstance(module, nn.modules.batchnorm._BatchNorm):
+            module.eval()
+
+
+def has_active_dropout(model: nn.Module) -> bool:
+    """Whether a forward pass would currently apply dropout.
+
+    Covers both the module form and timm's functional `drop_rate`, so a caller can
+    verify MC Dropout is really active rather than silently sampling a deterministic
+    model and reporting zero uncertainty.
+    """
+    if not model.training:
+        # Functional dropout keys off training mode, so nothing fires in eval.
+        has_module = any(isinstance(m, nn.Dropout) and m.training for m in model.modules())
+        return has_module
+
+    if getattr(model, "drop_rate", 0.0) > 0.0:
+        return True
+    return any(isinstance(m, nn.Dropout) and m.p > 0.0 for m in model.modules())
 
 
 def count_parameters(model: nn.Module) -> tuple[int, int]:

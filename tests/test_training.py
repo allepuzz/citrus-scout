@@ -282,3 +282,99 @@ class TestFormatDuration:
     )
     def test_formats(self, seconds, expected):
         assert format_duration(seconds) == expected
+
+
+class TestModel:
+    """The model module had no coverage until CI caught a lint error in it.
+
+    These tests are cheap and guard the parts that fail silently: a freeze that
+    does not freeze still trains, just badly, and gives no error to notice.
+    """
+
+    def test_builds_with_requested_class_count(self):
+        from citrus_scout.models.classifier import build_model
+
+        model = build_model(num_classes=2, pretrained=False)
+        output = model(torch.zeros(2, 3, 224, 224))
+        assert output.shape == (2, 2)
+
+    def test_freeze_leaves_only_the_head_trainable(self):
+        from citrus_scout.models.classifier import (
+            build_model,
+            count_parameters,
+            freeze_backbone,
+        )
+
+        model = build_model(num_classes=2, pretrained=False)
+        total_before = count_parameters(model)[1]
+
+        freeze_backbone(model)
+        trainable, total = count_parameters(model)
+
+        assert trainable < total
+        assert total == total_before
+
+    def test_unfreeze_restores_every_parameter(self):
+        from citrus_scout.models.classifier import (
+            build_model,
+            count_parameters,
+            freeze_backbone,
+            unfreeze_all,
+        )
+
+        model = build_model(num_classes=2, pretrained=False)
+        freeze_backbone(model)
+        unfreeze_all(model)
+
+        trainable, total = count_parameters(model)
+        assert trainable == total
+
+    def test_dropout_is_active_for_mc_dropout(self):
+        """Uncertainty estimation depends on dropout actually firing.
+
+        timm's EfficientNet applies dropout functionally from a `drop_rate`
+        attribute rather than through an nn.Dropout module, so looking for the
+        module finds nothing even though dropout is configured.
+        """
+        from citrus_scout.models.classifier import build_model, has_active_dropout
+
+        model = build_model(num_classes=2, pretrained=False, dropout=0.3)
+        model.train()
+        assert has_active_dropout(model)
+
+    def test_eval_mode_is_deterministic(self):
+        from citrus_scout.models.classifier import build_model
+
+        model = build_model(num_classes=2, pretrained=False, dropout=0.5).eval()
+        batch = torch.randn(2, 3, 224, 224)
+        with torch.no_grad():
+            assert torch.allclose(model(batch), model(batch))
+
+    def test_mc_dropout_gives_varying_predictions(self):
+        """Without variation between passes there is no uncertainty to measure."""
+        from citrus_scout.models.classifier import build_model, enable_mc_dropout
+
+        model = build_model(num_classes=2, pretrained=False, dropout=0.5)
+        enable_mc_dropout(model)
+
+        batch = torch.randn(2, 3, 224, 224)
+        with torch.no_grad():
+            assert not torch.allclose(model(batch), model(batch))
+
+    def test_mc_dropout_freezes_batchnorm_statistics(self):
+        """BatchNorm must not update running stats while sampling for uncertainty."""
+        from torch import nn
+
+        from citrus_scout.models.classifier import build_model, enable_mc_dropout
+
+        model = build_model(num_classes=2, pretrained=False, dropout=0.5)
+        enable_mc_dropout(model)
+
+        batchnorms = [m for m in model.modules() if isinstance(m, nn.modules.batchnorm._BatchNorm)]
+        assert batchnorms, "expected BatchNorm layers in this backbone"
+        assert all(not m.training for m in batchnorms)
+
+    def test_select_device_honours_explicit_choice(self):
+        from citrus_scout.models.classifier import select_device
+
+        assert select_device("cpu").type == "cpu"
