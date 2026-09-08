@@ -48,9 +48,11 @@ data/processed/*
 *.h5
 *.ckpt
 *.safetensors
-models/
-checkpoints/
-runs/
+# Anchored to the repo root: an unanchored `models/` would also exclude the
+# source package src/citrus_scout/models/, silently dropping the model code.
+/models/
+/checkpoints/
+/runs/
 outputs/
 lightning_logs/
 wandb/

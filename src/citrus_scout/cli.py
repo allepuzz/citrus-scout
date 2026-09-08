@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -116,6 +118,73 @@ def relevance_command() -> None:
             RELEVANCE_NOTES.get(label, ""),
         )
     console.print(table)
+
+
+@data_app.command("package")
+def package_command(
+    output: Path = typer.Option(
+        Path("data/processed/leaf_dataset.zip"),
+        "--output",
+        "-o",
+        help="Where to write the archive.",
+    ),
+    max_side: int = typer.Option(512, help="Downscale so the longest side is at most this."),
+    quality: int = typer.Option(90, help="JPEG quality for the export."),
+    seed: int = typer.Option(42, help="Split seed, baked into the archive."),
+) -> None:
+    """Package the split images into one archive for upload to Colab.
+
+    Uploading the raw download to Drive is impractical: thousands of files where
+    per-file latency dominates. This writes a single downscaled archive instead.
+    """
+    from citrus_scout.data.package import package_for_colab
+
+    with console.status("packaging images..."):
+        stats = package_for_colab(output, max_side=max_side, quality=quality, seed=seed)
+    console.print(f"[green]ok[/green] {stats.describe()}")
+    console.print(f"upload this file to Drive: {stats.archive}")
+
+
+@app.command("train")
+def train_command(
+    config: Path = typer.Option(..., "--config", "-c", help="Path to a YAML config."),
+    archive: Path | None = typer.Option(
+        None, "--archive", help="Train from a packaged archive instead of data/raw."
+    ),
+    epochs: int | None = typer.Option(None, help="Override the epoch count."),
+    batch_size: int | None = typer.Option(None, help="Override the batch size."),
+    wandb_project: str | None = typer.Option(None, help="Log metrics to this W&B project."),
+) -> None:
+    """Train a model from a config file."""
+    from citrus_scout.training.config import TrainingConfig
+    from citrus_scout.training.train import run_training
+
+    settings = TrainingConfig.from_yaml(config)
+
+    # Overrides exist so a Colab cell can vary batch size for a different GPU
+    # without editing the versioned config.
+    if archive is not None:
+        settings.data.archive = archive
+    if epochs is not None:
+        settings.optim.epochs = epochs
+    if batch_size is not None:
+        settings.data.batch_size = batch_size
+    if wandb_project is not None:
+        settings.wandb_project = wandb_project
+
+    run_training(settings)
+
+
+@app.command("evaluate")
+def evaluate_command(
+    checkpoint: Path = typer.Option(..., "--checkpoint", help="Path to a saved model."),
+    archive: Path | None = typer.Option(None, "--archive", help="Packaged archive to use."),
+    split: str = typer.Option("test", help="Which split to evaluate."),
+) -> None:
+    """Evaluate a checkpoint and report metrics at field prevalence."""
+    from citrus_scout.evaluation.report import evaluate_checkpoint
+
+    evaluate_checkpoint(checkpoint, archive=archive, split=split, console=console)
 
 
 if __name__ == "__main__":
