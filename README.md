@@ -24,16 +24,16 @@ suspicious trees. That is what keeps the per-hectare cost viable.
 
 ## Realistic targets (Region of Murcia)
 
-**Detectable from nadir UAV imagery** — canopy-scale signature:
+**Detectable from nadir UAV imagery**, canopy-scale signature:
 - Decline caused by *Phytophthora* (gummosis / foot rot)
 - Tristeza (CTV)
 - Water and nutrient stress
 
-**Not detectable from nadir view** — millimetre-scale symptoms on organs:
+**Not detectable from nadir view**, millimetre-scale symptoms on organs:
 California red scale (~2 mm), *Delottococcus aberiae*, citrus leafminer, aphids,
 *Ceratitis capitata*. These require the close-range inspection pass.
 
-**Absent from Spain** — no local ground truth possible:
+**Absent from Spain**, no local ground truth possible:
 HLB (*Candidatus* Liberibacter spp.) and its vectors. Spain is free of the bacterium and of
 *Diaphorina citri*; *Trioza erytreae* is present in the Canary Islands and the Cantabrian
 coast, but not in the Mediterranean Levante. **The entire UAV-based HLB detection literature
@@ -41,7 +41,7 @@ is therefore not reproducible here.**
 
 ## Status
 
-🚧 Phase 0 — building the classification pipeline on public leaf datasets.
+Phase 0: building the classification pipeline on public leaf datasets.
 
 ## Installation
 
@@ -56,15 +56,17 @@ uv pip install -e . --no-deps
 
 ### Kaggle credentials
 
-Public datasets are downloaded through the Kaggle API. Place your token at:
+Public datasets are downloaded through the Kaggle API. Create a token under
+*Kaggle > Settings > API* and place it in your Kaggle config directory:
 
 ```
-~/.kaggle/kaggle.json                     # Linux / macOS
-C:\Users\<user>\.kaggle\kaggle.json       # Windows
+~/.kaggle/                  # Linux / macOS
+%USERPROFILE%\.kaggle\      # Windows
 ```
 
-The file must be the JSON downloaded from *Kaggle → Settings → API → Create New Token*,
-containing `username` and `key`. Never commit it (it is covered by `.gitignore`).
+Recent Kaggle versions issue an `access_token` file; older ones a `kaggle.json` holding
+`username` and `key`. The client accepts either, trying the access token first. Never
+commit these (both are covered by `.gitignore`).
 
 ## Usage
 
@@ -106,7 +108,7 @@ This problem has **severe class imbalance** (prevalence of affected trees is typ
 Headline metrics:
 - **PR-AUC** (area under the precision-recall curve)
 - **F1** and sensitivity at fixed specificity
-- **PPV at real prevalence** — at 2% prevalence with 90% sensitivity and 90% specificity,
+- **PPV at real prevalence**. At 2% prevalence with 90% sensitivity and 90% specificity,
   the positive predictive value is 15.5%: roughly 6 out of 7 alerts would be false.
   Raising specificity to 99% lifts it to ~65%.
 
@@ -120,9 +122,9 @@ Data is **not versioned in git**. It is managed with DVC.
 Public datasets used in Phase 0 (close-range leaf images, controlled background):
 PlantVillage (orange), Kaggle citrus collections, the MDPI 649-leaf dataset.
 
-⚠️ These cover mostly exotic diseases (canker, HLB) and are close-range leaf shots, **not
+Note: these cover mostly exotic diseases (canker, HLB) and are close-range leaf shots, **not
 aerial imagery**. They are useful to pre-train the classifier for the inspection pass and to
-validate the pipeline — not as production data.
+validate the pipeline, not as production data.
 
 ## Regulatory notes
 

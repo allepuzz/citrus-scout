@@ -54,7 +54,7 @@ update
 fixed the bug
 ```
 
-Write the **why** in the body, not the what — the what is already in the diff.
+Write the **why** in the body, not the what. The what is already in the diff.
 
 ## Before opening a PR
 
@@ -74,11 +74,11 @@ uv run pre-commit install --hook-type pre-push
 ## Hard rules
 
 **Never commit:**
-- Credentials (`kaggle.json`, `.env`, tokens) — `.gitignore` and the hooks block these,
+- Credentials (`kaggle.json`, `.env`, tokens). `.gitignore` and the hooks block these,
   but review your diff anyway
-- Data or imagery — managed with DVC
-- Model checkpoints — these go to W&B or separate storage
-- Notebook outputs — `nbstripout` strips them automatically
+- Data or imagery, managed with DVC
+- Model checkpoints, which go to W&B or separate storage
+- Notebook outputs, which `nbstripout` strips automatically
 
 If a secret ever reaches `main`, **deleting it in a later commit is not enough**: it stays in
 history. Rotate the credential immediately and rewrite history.
