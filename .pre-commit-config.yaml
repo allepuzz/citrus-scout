@@ -1,0 +1,42 @@
+# Hooks que se ejecutan antes de cada commit.
+# Instalar una vez con:  uv run pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      # Bloquea commits de archivos grandes: los datos van por DVC
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      # Credenciales
+      - id: detect-private-key
+
+  # Linter + formateador
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # Escaneo de secretos: tokens de API, claves...
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: uv\.lock
+
+  # Limpia las salidas de los notebooks antes de commitear
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout

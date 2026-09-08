@@ -1,0 +1,132 @@
+# ---------------------------------------------------------------------------
+# Credenciales y secretos - NUNCA subir
+# ---------------------------------------------------------------------------
+.kaggle/
+kaggle.json
+Kaggle.txt
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+secrets/
+credentials*
+*token*.txt
+*_secret*
+
+# ---------------------------------------------------------------------------
+# Datos - se gestionan con DVC, no con git
+# ---------------------------------------------------------------------------
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+!data/**/*.dvc
+
+# Imagenes y video sueltos
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+*.mp4
+*.mov
+*.dng
+*.raw
+# Excepciones: assets de documentacion
+!docs/**/*.png
+!docs/**/*.jpg
+
+# ---------------------------------------------------------------------------
+# Modelos y checkpoints
+# ---------------------------------------------------------------------------
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.h5
+*.ckpt
+*.safetensors
+models/
+checkpoints/
+runs/
+outputs/
+lightning_logs/
+wandb/
+mlruns/
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib60/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Entornos virtuales
+.venv/
+venv/
+ENV/
+env/
+
+# Testing y cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# Type checkers y linters
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.pytype/
+
+# ---------------------------------------------------------------------------
+# Notebooks
+# ---------------------------------------------------------------------------
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# ---------------------------------------------------------------------------
+# Geoespacial / fotogrametria (archivos enormes)
+# ---------------------------------------------------------------------------
+*.las
+*.laz
+*.ply
+*.obj
+*.geotiff
+odm_*/
+opensfm/
+
+# ---------------------------------------------------------------------------
+# IDE y SO
+# ---------------------------------------------------------------------------
+.vscode/*
+!.vscode/settings.json.example
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
