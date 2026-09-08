@@ -28,7 +28,7 @@ def current_branch() -> str | None:
         return None
 
     if result.returncode != 0:
-        # Detached HEAD (rebase, bisect, checkout of a tag) — nothing to protect.
+        # Detached HEAD (rebase, bisect, checkout of a tag), nothing to protect.
         return None
     return result.stdout.strip()
 
