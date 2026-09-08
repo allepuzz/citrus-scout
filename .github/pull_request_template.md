@@ -1,34 +1,34 @@
-## Qué cambia
+## What changes
 
-<!-- Una o dos frases. Qué hace este PR, no cómo. -->
+<!-- One or two sentences. What this PR does, not how. -->
 
-## Por qué
+## Why
 
-<!-- El problema que resuelve. Enlaza el issue si existe: Closes #N -->
+<!-- The problem it solves. Link the issue if there is one: Closes #N -->
 
-## Cómo probarlo
+## How to test
 
-<!-- Pasos concretos para verificar el cambio. Comando exacto si aplica. -->
+<!-- Concrete steps to verify the change. Exact command where applicable. -->
 
 ```bash
 uv run pytest
 ```
 
-## Impacto en resultados
+## Impact on results
 
-<!-- Solo si toca modelos, datos o métricas. Si no, borra esta sección.
-     Incluye las métricas antes/después: PR-AUC, F1, VPP. Nunca accuracy sola. -->
+<!-- Only if this touches models, data or metrics. Delete this section otherwise.
+     Include before/after metrics: PR-AUC, F1, PPV. Never accuracy alone. -->
 
-| Métrica | Antes | Después |
+| Metric | Before | After |
 |---|---|---|
 | PR-AUC | | |
 | F1 | | |
-| VPP @ prev. 2 % | | |
+| PPV @ 2% prevalence | | |
 
 ## Checklist
 
-- [ ] `uv run ruff check .` y `uv run ruff format --check .` pasan
-- [ ] `uv run pytest` pasa
-- [ ] No hay credenciales, datos ni checkpoints en el diff
-- [ ] Los cambios de configuración están documentados
-- [ ] El README está actualizado si cambia el uso
+- [ ] `uv run ruff check .` and `uv run ruff format --check .` pass
+- [ ] `uv run pytest` passes
+- [ ] No credentials, data or checkpoints in the diff
+- [ ] Config changes are documented
+- [ ] README updated if usage changed

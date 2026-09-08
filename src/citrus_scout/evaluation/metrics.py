@@ -1,13 +1,14 @@
-"""Métricas para clasificación con fuerte desbalanceo de clases.
+"""Metrics for classification under severe class imbalance.
 
-La prevalencia de árboles afectados en un huerto comercial bien gestionado es baja
-(típicamente 2-5 %). En ese régimen la *accuracy* es inútil: un modelo que predice
-siempre "sano" acierta el 98 % de las veces y no detecta nada.
+The prevalence of affected trees in a well-managed commercial grove is low
+(typically 2-5%). In that regime accuracy is useless: a model that always
+predicts "healthy" is right 98% of the time while detecting nothing.
 
-Peor aún, un modelo con sensibilidad y especificidad altas puede seguir siendo
-inservible en la práctica, porque lo que le llega al técnico son los positivos
-predichos, y la mayoría pueden ser falsos. Ese es el número que decide si el
-producto sirve: el **valor predictivo positivo** a la prevalencia real de campo.
+Worse, a model with high sensitivity and specificity can still be unusable in
+practice, because what reaches the field technician is the set of predicted
+positives — and most of them may be false. That is the number that decides
+whether the product is viable: the **positive predictive value** at the real
+field prevalence.
 """
 
 from __future__ import annotations
@@ -20,37 +21,37 @@ from sklearn.metrics import average_precision_score, f1_score, roc_auc_score
 
 @dataclass(frozen=True)
 class OperatingPoint:
-    """Rendimiento del clasificador en un umbral de decisión concreto."""
+    """Classifier performance at one decision threshold."""
 
     threshold: float
     sensitivity: float
-    """Recall / tasa de verdaderos positivos: de los enfermos, cuántos detecto."""
+    """Recall / true positive rate: of the diseased trees, how many are detected."""
     specificity: float
-    """De los sanos, cuántos descarto correctamente."""
+    """Of the healthy trees, how many are correctly ruled out."""
     ppv: float
-    """Valor predictivo positivo a la prevalencia evaluada: de mis alertas, cuántas son reales."""
+    """Positive predictive value at the evaluated prevalence: of the alerts raised, how many are real."""
     npv: float
-    """Valor predictivo negativo."""
+    """Negative predictive value."""
     prevalence: float
-    """Prevalencia usada para calcular VPP y VPN."""
+    """Prevalence used to compute PPV and NPV."""
 
     def __str__(self) -> str:
         return (
-            f"umbral={self.threshold:.3f} | sens={self.sensitivity:.1%} "
-            f"espec={self.specificity:.1%} | VPP={self.ppv:.1%} "
-            f"(prevalencia {self.prevalence:.1%})"
+            f"threshold={self.threshold:.3f} | sens={self.sensitivity:.1%} "
+            f"spec={self.specificity:.1%} | PPV={self.ppv:.1%} "
+            f"(prevalence {self.prevalence:.1%})"
         )
 
 
 def ppv_at_prevalence(sensitivity: float, specificity: float, prevalence: float) -> float:
-    """Valor predictivo positivo mediante el teorema de Bayes.
+    """Positive predictive value via Bayes' theorem.
 
-    Permite proyectar el rendimiento medido en un conjunto de test balanceado a la
-    prevalencia real de campo, que es donde el sistema se va a usar.
+    Projects performance measured on a balanced test set onto the real field
+    prevalence, which is where the system will actually operate.
 
-    Ejemplo del informe base: con sensibilidad 90 %, especificidad 90 % y prevalencia
-    2 %, el VPP es del 15,5 % — alrededor de 6 de cada 7 alertas serían falsas.
-    Subiendo la especificidad al 99 %, el VPP sube al ~65 %.
+    Worked example: at 90% sensitivity, 90% specificity and 2% prevalence the PPV
+    is 15.5% — roughly 6 out of every 7 alerts would be false. Raising specificity
+    to 99% lifts the PPV to ~65%.
 
     >>> round(ppv_at_prevalence(0.90, 0.90, 0.02), 3)
     0.155
@@ -58,7 +59,7 @@ def ppv_at_prevalence(sensitivity: float, specificity: float, prevalence: float)
     0.647
     """
     if not 0.0 <= prevalence <= 1.0:
-        raise ValueError(f"La prevalencia debe estar en [0, 1], recibido {prevalence}")
+        raise ValueError(f"prevalence must be in [0, 1], got {prevalence}")
 
     true_positives = sensitivity * prevalence
     false_positives = (1.0 - specificity) * (1.0 - prevalence)
@@ -70,9 +71,9 @@ def ppv_at_prevalence(sensitivity: float, specificity: float, prevalence: float)
 
 
 def npv_at_prevalence(sensitivity: float, specificity: float, prevalence: float) -> float:
-    """Valor predictivo negativo mediante el teorema de Bayes."""
+    """Negative predictive value via Bayes' theorem."""
     if not 0.0 <= prevalence <= 1.0:
-        raise ValueError(f"La prevalencia debe estar en [0, 1], recibido {prevalence}")
+        raise ValueError(f"prevalence must be in [0, 1], got {prevalence}")
 
     true_negatives = specificity * (1.0 - prevalence)
     false_negatives = (1.0 - sensitivity) * prevalence
@@ -89,7 +90,7 @@ def operating_point_at_threshold(
     threshold: float,
     prevalence: float,
 ) -> OperatingPoint:
-    """Evalúa el clasificador en un umbral, proyectando el VPP a la prevalencia dada."""
+    """Evaluate the classifier at one threshold, projecting PPV to the given prevalence."""
     y_pred = (y_score >= threshold).astype(int)
 
     positives = y_true == 1
@@ -116,22 +117,22 @@ def threshold_for_specificity(
     y_score: np.ndarray,
     target_specificity: float,
 ) -> float:
-    """Umbral más bajo que alcanza la especificidad objetivo.
+    """Lowest threshold that reaches the target specificity.
 
-    Este es el ajuste operativo del sistema. El coste de no inspeccionar un árbol sano
-    es bajo, pero saturar al técnico de falsos positivos hace que deje de usar la
-    herramienta. Por eso el punto de operación se fija por especificidad, no por
-    maximizar F1.
+    This is how the system's operating point is tuned. The cost of skipping a healthy
+    tree is low, but flooding the technician with false positives makes them abandon
+    the tool. Hence the operating point is set by specificity rather than by
+    maximising F1.
     """
     if not 0.0 <= target_specificity <= 1.0:
-        raise ValueError(f"La especificidad debe estar en [0, 1], recibido {target_specificity}")
+        raise ValueError(f"specificity must be in [0, 1], got {target_specificity}")
 
     negative_scores = y_score[y_true == 0]
     if negative_scores.size == 0:
-        raise ValueError("No hay muestras negativas para calcular la especificidad")
+        raise ValueError("no negative samples available to compute specificity")
 
-    # El umbral en el percentil `target_specificity` de las puntuaciones negativas
-    # deja exactamente esa fracción de negativos por debajo.
+    # The threshold at the `target_specificity` quantile of the negative scores
+    # leaves exactly that fraction of negatives below it.
     return float(np.quantile(negative_scores, target_specificity))
 
 
@@ -142,26 +143,26 @@ def classification_report(
     field_prevalence: float = 0.02,
     target_specificities: tuple[float, ...] = (0.90, 0.95, 0.99),
 ) -> dict[str, float | list[OperatingPoint]]:
-    """Informe completo para un clasificador binario desbalanceado.
+    """Full report for an imbalanced binary classifier.
 
-    Deliberadamente **no** devuelve accuracy: con prevalencias bajas es engañosa y
-    tiende a justificar modelos que no detectan nada.
+    Deliberately does **not** return accuracy: at low prevalence it is misleading and
+    tends to justify models that detect nothing.
 
     Args:
-        y_true: etiquetas binarias, 1 = afectado.
-        y_score: puntuación continua de la clase positiva (probabilidad o logit).
-        field_prevalence: prevalencia real esperada en campo, para proyectar el VPP.
-        target_specificities: especificidades a las que reportar puntos de operación.
+        y_true: binary labels, 1 = affected.
+        y_score: continuous score for the positive class (probability or logit).
+        field_prevalence: expected real-world prevalence, used to project the PPV.
+        target_specificities: specificities at which to report operating points.
     """
     y_true = np.asarray(y_true).ravel()
     y_score = np.asarray(y_score).ravel()
 
     if y_true.shape != y_score.shape:
-        raise ValueError(f"Dimensiones incompatibles: {y_true.shape} vs {y_score.shape}")
+        raise ValueError(f"shape mismatch: {y_true.shape} vs {y_score.shape}")
 
     unique = np.unique(y_true)
     if not np.all(np.isin(unique, [0, 1])):
-        raise ValueError(f"y_true debe ser binario (0/1), encontrado {unique}")
+        raise ValueError(f"y_true must be binary (0/1), found {unique}")
 
     operating_points = [
         operating_point_at_threshold(
@@ -173,11 +174,11 @@ def classification_report(
         for spec in target_specificities
     ]
 
-    # F1 en el umbral 0.5, solo como referencia comparable con la literatura.
+    # F1 at threshold 0.5, reported only for comparability with published results.
     f1_at_half = float(f1_score(y_true, (y_score >= 0.5).astype(int), zero_division=0))
 
     return {
-        # PR-AUC es la métrica principal: insensible al desbalanceo, a diferencia de ROC-AUC.
+        # PR-AUC is the headline metric: unlike ROC-AUC it is sensitive to imbalance.
         "pr_auc": float(average_precision_score(y_true, y_score)),
         "roc_auc": float(roc_auc_score(y_true, y_score)) if len(unique) == 2 else float("nan"),
         "f1_at_0.5": f1_at_half,

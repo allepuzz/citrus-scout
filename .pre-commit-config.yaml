@@ -1,5 +1,5 @@
-# Hooks que se ejecutan antes de cada commit.
-# Instalar una vez con:  uv run pre-commit install
+# Hooks that run before each commit.
+# Install once with:  uv run pre-commit install
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -13,13 +13,13 @@ repos:
       - id: check-case-conflict
       - id: mixed-line-ending
         args: [--fix=lf]
-      # Bloquea commits de archivos grandes: los datos van por DVC
+      # Block large files: data belongs in DVC
       - id: check-added-large-files
         args: [--maxkb=1000]
-      # Credenciales
+      # Credentials
       - id: detect-private-key
 
-  # Linter + formateador
+  # Linter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.7.4
     hooks:
@@ -27,7 +27,7 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
-  # Escaneo de secretos: tokens de API, claves...
+  # Secret scanning: API tokens, keys...
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
@@ -35,8 +35,29 @@ repos:
         args: ["--baseline", ".secrets.baseline"]
         exclude: uv\.lock
 
-  # Limpia las salidas de los notebooks antes de commitear
+  # Strip notebook outputs before committing
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1
     hooks:
       - id: nbstripout
+
+  # Local guard rails
+  - repo: local
+    hooks:
+      # Server-side rulesets need GitHub Pro on private repos, so protect main here.
+      - id: no-commit-to-main
+        name: block direct commits to main
+        entry: python scripts/no_commit_to_main.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Full test suite before pushing. Kept off the commit hook so that
+      # work-in-progress commits stay fast.
+      - id: pytest-on-push
+        name: pytest
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

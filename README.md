@@ -1,134 +1,138 @@
 # citrus-scout
 
-Detección de plagas y enfermedades en cítricos mediante imagen aérea (UAV) y visión por computador.
+MLOps pipeline for pest and disease detection in citrus trees from UAV imagery.
 
-## Contexto
+## Context
 
-El *scouting* fitosanitario en cítricos se hace hoy de forma manual y muestral: un técnico
-recorre la parcela siguiendo protocolos de muestreo (GIP-IVIA) y extrapola. Es caro, lento y
-no da un censo árbol a árbol.
+Phytosanitary scouting in citrus is done manually and by sampling: a technician walks the
+grove following sampling protocols (GIP-IVIA) and extrapolates. It is slow, expensive, and
+never produces a tree-by-tree census.
 
-`citrus-scout` busca automatizar esa inspección con dron + visión por computador, orientado a
-**cooperativas y ATRIAs** de la Región de Murcia (28.442 ha de limonero, ~53 % del limón nacional).
+`citrus-scout` aims to automate that inspection with drone imagery and computer vision,
+targeting **cooperatives and ATRIAs** in the Region of Murcia (28,442 ha of lemon trees,
+~53% of Spain's national lemon production).
 
-### Enfoque en dos pasadas
+### Two-pass approach
 
-| Pasada | Altura | GSD | Qué detecta |
+| Pass | Altitude | GSD | Detects |
 |---|---|---|---|
-| **Criba** | 15-25 m | 0,3-0,7 cm/px | Decaimiento de copa, pérdida de vigor, árboles muertos |
-| **Inspección** | < 2 m | < 0,05 cm/px | Síntomas de órgano (hoja, fruto) sobre árboles marcados |
+| **Screening** | 15-25 m | 0.3-0.7 cm/px | Canopy decline, vigour loss, dead trees |
+| **Inspection** | < 2 m | < 0.05 cm/px | Organ-level symptoms (leaf, fruit) on flagged trees |
 
-La criba cubre la parcela entera rápido; la inspección solo desciende sobre los árboles
-sospechosos. Es lo que hace el coste por hectárea viable.
+The screening pass covers the whole plot quickly; the inspection pass only descends over
+suspicious trees. That is what keeps the per-hectare cost viable.
 
-## Dianas realistas (Región de Murcia)
+## Realistic targets (Region of Murcia)
 
-**Detectables por UAV cenital** — firma a escala de copa:
-- Decaimiento por *Phytophthora* (gomosis / podredumbre de cuello)
+**Detectable from nadir UAV imagery** — canopy-scale signature:
+- Decline caused by *Phytophthora* (gummosis / foot rot)
 - Tristeza (CTV)
-- Estrés hídrico y nutricional
+- Water and nutrient stress
 
-**NO detectables desde vista cenital** — síntoma milimétrico en órgano:
-piojo rojo de California (~2 mm), cotonet, minador, pulgones, *Ceratitis*.
-Requieren la pasada de inspección a corta distancia.
+**Not detectable from nadir view** — millimetre-scale symptoms on organs:
+California red scale (~2 mm), *Delottococcus aberiae*, citrus leafminer, aphids,
+*Ceratitis capitata*. These require the close-range inspection pass.
 
-**Ausentes en España** — sin *ground truth* local posible:
-HLB (*Candidatus* Liberibacter spp.) y sus vectores. España está libre de la bacteria y de
-*Diaphorina citri*; *Trioza erytreae* está en Canarias y la cornisa cantábrica, no en el
-Levante mediterráneo. **Toda la literatura de detección de HLB por UAV no es replicable aquí.**
+**Absent from Spain** — no local ground truth possible:
+HLB (*Candidatus* Liberibacter spp.) and its vectors. Spain is free of the bacterium and of
+*Diaphorina citri*; *Trioza erytreae* is present in the Canary Islands and the Cantabrian
+coast, but not in the Mediterranean Levante. **The entire UAV-based HLB detection literature
+is therefore not reproducible here.**
 
-## Estado
+## Status
 
-🚧 Fase 0 — montaje del pipeline de clasificación sobre datasets públicos de hoja.
+🚧 Phase 0 — building the classification pipeline on public leaf datasets.
 
-## Instalación
+## Installation
 
-Requiere [uv](https://docs.astral.sh/uv/).
+Requires [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/allepuzz/citrus-scout.git
 cd citrus-scout
 uv sync --extra dev
+uv pip install -e . --no-deps
 ```
 
-### Credenciales de Kaggle
+### Kaggle credentials
 
-Los datasets públicos se descargan con la API de Kaggle. Coloca tu token en:
+Public datasets are downloaded through the Kaggle API. Place your token at:
 
 ```
-~/.kaggle/kaggle.json          # Linux / macOS
-C:\Users\<usuario>\.kaggle\kaggle.json   # Windows
+~/.kaggle/kaggle.json                     # Linux / macOS
+C:\Users\<user>\.kaggle\kaggle.json       # Windows
 ```
 
-Nunca añadas ese archivo al repositorio (está en `.gitignore`).
+The file must be the JSON downloaded from *Kaggle → Settings → API → Create New Token*,
+containing `username` and `key`. Never commit it (it is covered by `.gitignore`).
 
-## Uso
+## Usage
 
 ```bash
-# Descargar datasets públicos de hoja
+# Download public leaf datasets
 uv run citrus-scout data download
 
-# Entrenar
+# Train
 uv run citrus-scout train --config configs/leaf_baseline.yaml
 
-# Evaluar
+# Evaluate
 uv run citrus-scout evaluate --checkpoint runs/<id>/best.pt
 ```
 
-### Entrenar en Colab
+### Training on Colab
 
-El código está diseñado para correr igual en local y en Colab: el notebook clona el repo,
-instala y lanza el mismo script. Ver `notebooks/colab_train.ipynb`.
+The code is designed to run identically locally and on Colab: the notebook clones the repo,
+installs dependencies, and runs the same script. See `notebooks/colab_train.ipynb`.
 
-## Estructura
+## Layout
 
 ```
 src/citrus_scout/
-├── data/          # datasets, descarga, transformaciones
-├── models/        # arquitecturas y factory de backbones
-├── training/      # bucle de entrenamiento, callbacks
-├── evaluation/    # métricas, incertidumbre, calibración
-└── utils/         # configuración, semillas, logging
-configs/           # configuraciones de experimento (YAML)
-scripts/           # utilidades sueltas
-notebooks/         # exploración y Colab
+├── data/          # datasets, download, transforms
+├── models/        # architectures and backbone factory
+├── training/      # training loop, callbacks
+├── evaluation/    # metrics, uncertainty, calibration
+└── utils/         # config, seeding, logging
+configs/           # experiment configs (YAML)
+scripts/           # standalone utilities
+notebooks/         # exploration and Colab
 ```
 
-## Métricas
+## Metrics
 
-Este problema tiene **fuerte desbalanceo de clases** (prevalencia de árboles afectados
-típicamente del 2-5 %). La *accuracy* es engañosa y no se usa.
+This problem has **severe class imbalance** (prevalence of affected trees is typically
+2-5%). Accuracy is misleading and is not used.
 
-Métricas de referencia:
-- **PR-AUC** (área bajo precisión-recall)
-- **F1** y sensibilidad a especificidad fija
-- **VPP a prevalencia real** — con prevalencia 2 %, sensibilidad 90 % y especificidad 90 %,
-  el valor predictivo positivo es del 15,5 %: ~6 de cada 7 alertas serían falsas.
-  Subir la especificidad al 99 % lo lleva al ~65 %.
+Headline metrics:
+- **PR-AUC** (area under the precision-recall curve)
+- **F1** and sensitivity at fixed specificity
+- **PPV at real prevalence** — at 2% prevalence with 90% sensitivity and 90% specificity,
+  the positive predictive value is 15.5%: roughly 6 out of 7 alerts would be false.
+  Raising specificity to 99% lifts it to ~65%.
 
-El punto de operación se ajusta hacia **alta especificidad**: el coste de no inspeccionar un
-árbol sano es bajo, pero saturar al técnico de falsos positivos hace el sistema inútil.
+The operating point is tuned towards **high specificity**: the cost of skipping a healthy
+tree is low, but flooding the technician with false positives makes the system useless.
 
-## Datos
+## Data
 
-Los datos **no se versionan en git**. Se gestionan con DVC.
+Data is **not versioned in git**. It is managed with DVC.
 
-Datasets públicos usados en Fase 0 (hoja a corta distancia, fondo controlado):
-PlantVillage (naranjo), colecciones Kaggle de cítricos, dataset MDPI de 649 hojas.
+Public datasets used in Phase 0 (close-range leaf images, controlled background):
+PlantVillage (orange), Kaggle citrus collections, the MDPI 649-leaf dataset.
 
-⚠️ Son de enfermedades mayoritariamente exóticas (canker, HLB) y de hoja cercana, **no de
-vista aérea**. Sirven para preentrenar el clasificador de la pasada de inspección y para
-validar el pipeline, no como datos finales de producción.
+⚠️ These cover mostly exotic diseases (canker, HLB) and are close-range leaf shots, **not
+aerial imagery**. They are useful to pre-train the classifier for the inspection pass and to
+validate the pipeline — not as production data.
 
-## Normativa
+## Regulatory notes
 
-Operación bajo Reglamentos UE 2019/947 y 2019/945 + RD 517/2024:
-- Registro de operador UAS en AESA (obligatorio, gratuito)
-- Formación A1/A3 (online, gratuita)
-- Consulta de zonas geográficas en **ENAIRE Drones** antes de cada vuelo
-- Altura máxima 120 m en categoría Abierta
-- Seguro no obligatorio en A1/A3 con < 20 kg (RD 517/2024 art. 8), pero recomendable
+Operations fall under EU Regulations 2019/947 and 2019/945 plus Spanish RD 517/2024:
+- UAS operator registration with AESA (mandatory, free)
+- A1/A3 training (online, free)
+- Mandatory geographic-zone check on **ENAIRE Drones** before every flight
+- Maximum altitude 120 m in the Open category
+- Insurance not mandatory in A1/A3 under 20 kg (RD 517/2024 art. 8), but recommended
 
-## Licencia
+## License
 
-MIT. Ver [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
