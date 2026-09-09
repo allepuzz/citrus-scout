@@ -71,20 +71,35 @@ commit these (both are covered by `.gitignore`).
 ## Usage
 
 ```bash
-# Download public leaf datasets
+# Download the public leaf datasets (about 5.5 GB)
 uv run citrus-scout data download
+
+# Inspect what was assembled
+uv run citrus-scout data summary
+uv run citrus-scout data relevance
+
+# Package for upload to Colab: 5.5 GB and 14,000 files become one 174 MB archive
+uv run citrus-scout data package
 
 # Train
 uv run citrus-scout train --config configs/leaf_baseline.yaml
 
-# Evaluate
-uv run citrus-scout evaluate --checkpoint runs/<id>/best.pt
+# Evaluate, reporting PPV at real field prevalence
+uv run citrus-scout evaluate --checkpoint runs/leaf_baseline/best.pt
 ```
 
 ### Training on Colab
 
-The code is designed to run identically locally and on Colab: the notebook clones the repo,
-installs dependencies, and runs the same script. See `notebooks/colab_train.ipynb`.
+Training on a laptop GPU is slow and heats the machine, so the intended path is
+Colab. `notebooks/colab_train.ipynb` clones this repo, installs it, and runs the same
+CLI shown above; nothing that affects a result is defined in a notebook cell.
+
+1. Locally: `uv run citrus-scout data package`
+2. Upload `data/processed/leaf_dataset.zip` to Drive
+3. Open the notebook in Colab, set the runtime to a T4 GPU, run the cells
+
+The archive carries its own split assignment, so a Colab run trains on exactly the
+partition your machine produced rather than recomputing one that might differ.
 
 ## Layout
 

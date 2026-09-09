@@ -1,0 +1,26 @@
+# Fast sanity check: two short epochs to prove the pipeline runs end to end.
+# Not a meaningful result, just a check that nothing crashes before a real run.
+name: leaf_smoke
+device: auto
+
+data:
+  image_size: 224
+  batch_size: 16
+  num_workers: 2
+  seed: 42
+  binary: true
+  balance_classes: true
+
+model:
+  backbone: efficientnet_b0
+  pretrained: true
+  dropout: 0.3
+
+optim:
+  epochs: 2
+  learning_rate: 0.0003
+  warmup_epochs: 1
+  amp: true
+  early_stopping_patience: null
+
+field_prevalence: 0.02
