@@ -49,6 +49,23 @@ being solved, and is why the evaluation tooling exists.
 The binding constraint now is data, not code: real UAV imagery over Murcian groves with
 agronomic ground truth. Nothing in this repository improves until that exists.
 
+## Documentation
+
+Complete explanation of the system, every design decision, and every limitation, in
+`docs/` (Spanish, written from zero assumed knowledge of machine learning):
+
+| Document | Contents |
+|---|---|
+| [Index](docs/00-indice.md) | Overview and the real numbers from the baseline run |
+| [1. Concepts](docs/01-conceptos.md) | Every term from scratch: specificity, PPV, PR-AUC, calibration, uncertainty, Grad-CAM, with the maths |
+| [2. The data](docs/02-datos.md) | What these images actually are, the 17 classes, the 80.3% prevalence, the filtering funnel |
+| [3. Training](docs/03-entrenamiento.md) | Every decision in the order it happens, explaining the baseline run line by line |
+| [4. Evaluation](docs/04-evaluacion.md) | The four tools and which question each one answers |
+| [5. Decisions and bugs](docs/05-decisiones.md) | Master decision table, the seven bugs found, and every limitation |
+| [6. The full flow](docs/06-flujo.md) | One image from disk to an alert, and where each step lives |
+
+Start with document 2. The nature of the data sets the ceiling on everything else.
+
 ## Installation
 
 Requires [uv](https://docs.astral.sh/uv/).
