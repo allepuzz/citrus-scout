@@ -3,7 +3,7 @@ name = "citrus-scout"
 version = "0.1.0"
 description = "Deteccion de plagas y enfermedades en citricos mediante imagen aerea (UAV) y vision por computador"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 license = { text = "Proprietary" }
 authors = [{ name = "Angel Allepuz", email = "allepuzangel@gmail.com" }]
 
