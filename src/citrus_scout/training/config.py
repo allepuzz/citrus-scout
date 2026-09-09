@@ -7,6 +7,7 @@ alone, and a Colab run and a local run differ only in the file they were handed.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -22,8 +23,12 @@ class DataConfig(BaseModel):
 
     image_size: int = 224
     batch_size: int = 32
-    num_workers: int = 4
     seed: int = 42
+
+    num_workers: int | None = None
+    """DataLoader workers. None means derive it from the machine, which is what
+    Colab needs: its runtimes give 2 CPUs, and a hardcoded 4 makes torch warn on
+    every run. Set an integer to pin it."""
     val_fraction: float = 0.15
     test_fraction: float = 0.15
     min_samples_per_class: int = 20
@@ -33,6 +38,19 @@ class DataConfig(BaseModel):
 
     balance_classes: bool = True
     """Weight the loss by inverse class frequency."""
+
+    def resolve_num_workers(self) -> int:
+        """The worker count to hand a DataLoader.
+
+        Honours an explicit setting. Otherwise leaves one core for the main
+        process and caps at 4, past which image decoding stops being the
+        bottleneck. Colab's 2-CPU runtimes resolve to 1, which is what stops
+        torch warning about oversubscription.
+        """
+        if self.num_workers is not None:
+            return self.num_workers
+        available = os.cpu_count() or 1
+        return max(0, min(available - 1, 4))
 
 
 class ModelConfig(BaseModel):
@@ -54,6 +72,15 @@ class OptimConfig(BaseModel):
     """Mixed precision. Roughly halves memory, which matters on a 4 GB card."""
 
     early_stopping_patience: int | None = 5
+    """Stop after this many epochs without a meaningful PR-AUC gain. None disables it."""
+
+    early_stopping_min_delta: float = 1e-4
+    """How much PR-AUC must gain to count as improvement.
+
+    Without a floor, noise in the fourth decimal reads as progress and patience
+    never runs out. The checkpoint still follows any gain at all; this only
+    governs when to give up.
+    """
 
 
 class TrainingConfig(BaseModel):

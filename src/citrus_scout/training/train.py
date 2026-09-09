@@ -29,6 +29,7 @@ from citrus_scout.training.loop import (
     format_duration,
     now,
     save_checkpoint,
+    should_stop,
     train_one_epoch,
     write_history,
 )
@@ -121,10 +122,11 @@ def build_loaders(
             classes = all_classes
             train_labels = [raw_train.class_to_index[s.label] for s in split.train]
 
+    workers = config.data.resolve_num_workers()
     common = {
-        "num_workers": config.data.num_workers,
+        "num_workers": workers,
         "pin_memory": torch.cuda.is_available(),
-        "persistent_workers": config.data.num_workers > 0,
+        "persistent_workers": workers > 0,
     }
     train_loader = DataLoader(
         train_ds, batch_size=config.data.batch_size, shuffle=True, drop_last=True, **common
@@ -247,16 +249,26 @@ def run_training(config: TrainingConfig, *, output_dir: Path | None = None) -> P
 
         # Select on PR-AUC: validation loss can fall while minority-class ranking
         # gets worse, and ranking is what the operating threshold depends on.
-        if report["pr_auc"] > best_pr_auc:
-            best_pr_auc = report["pr_auc"]
-            epochs_without_improvement = 0
+        pr_auc = report["pr_auc"]
+
+        # Ask before updating the best: `should_stop` judges this epoch against
+        # the previous high-water mark.
+        stop, epochs_without_improvement, reason = should_stop(
+            pr_auc=pr_auc,
+            best_pr_auc=best_pr_auc,
+            epochs_without_improvement=epochs_without_improvement,
+            patience=config.optim.early_stopping_patience,
+            min_delta=config.optim.early_stopping_min_delta,
+        )
+
+        # The checkpoint follows any gain at all, with no floor applied.
+        if pr_auc > best_pr_auc:
+            best_pr_auc = pr_auc
             save_checkpoint(run_dir / "best.pt", model, config, classes, epoch, report)
-        else:
-            epochs_without_improvement += 1
-            patience = config.optim.early_stopping_patience
-            if patience is not None and epochs_without_improvement >= patience:
-                print(f"early stopping: no improvement for {patience} epochs")
-                break
+
+        if stop:
+            print(f"stopping at epoch {epoch}: {reason}")
+            break
 
     write_history(run_dir / "history.json", history)
 

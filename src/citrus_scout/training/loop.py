@@ -202,3 +202,36 @@ def format_duration(seconds: float) -> str:
 
 def now() -> float:
     return time.perf_counter()
+
+
+def should_stop(
+    *,
+    pr_auc: float,
+    best_pr_auc: float,
+    epochs_without_improvement: int,
+    patience: int | None,
+    min_delta: float,
+) -> tuple[bool, int, str | None]:
+    """Decide whether to end training after an epoch.
+
+    Returns the stop flag, the updated stall counter, and a reason to print when
+    stopping. `best_pr_auc` is the best score from *before* this epoch.
+
+    Two things are deliberately separate here. Improvement for the purpose of
+    giving up needs a floor, because PR-AUC is capped at 1.0: a saturated run can
+    never beat its own best, so under a strict comparison every later epoch looks
+    like a regression and the run dies at `patience` while still training fine.
+    Checkpoint selection uses no floor and is handled by the caller.
+    """
+    improved = pr_auc > best_pr_auc + min_delta
+    stalled = 0 if improved else epochs_without_improvement + 1
+
+    if patience is not None and stalled >= patience:
+        return True, stalled, f"early stopping: no PR-AUC gain for {patience} epochs"
+
+    # A perfect score leaves the metric no resolution to steer by. Say so, rather
+    # than letting patience expire and reporting it as a plateau.
+    if pr_auc >= 1.0:
+        return True, stalled, "PR-AUC saturated at 1.0000: the task is too easy to rank on"
+
+    return False, stalled, None

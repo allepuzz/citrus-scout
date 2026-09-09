@@ -16,8 +16,8 @@ from citrus_scout.data.leaf_dataset import LeafSample
 from citrus_scout.data.package import _resized, package_splits
 from citrus_scout.data.splits import SplitResult
 from citrus_scout.data.transforms import eval_transform, train_transform
-from citrus_scout.training.config import TrainingConfig
-from citrus_scout.training.loop import class_weights, format_duration
+from citrus_scout.training.config import DataConfig, TrainingConfig
+from citrus_scout.training.loop import class_weights, format_duration, should_stop
 
 
 class TestTrainingConfig:
@@ -378,3 +378,123 @@ class TestModel:
         from citrus_scout.models.classifier import select_device
 
         assert select_device("cpu").type == "cpu"
+
+
+class TestNumWorkers:
+    """Worker count resolution. Colab gives 2 CPUs and torch warns when a
+    DataLoader oversubscribes them, which a hardcoded 4 always did."""
+
+    def test_explicit_value_is_honoured(self):
+        config = DataConfig(num_workers=7)
+        assert config.resolve_num_workers() == 7
+
+    def test_explicit_zero_is_honoured(self):
+        # 0 means "load in the main process", a legitimate request, not "unset".
+        config = DataConfig(num_workers=0)
+        assert config.resolve_num_workers() == 0
+
+    def test_unset_derives_from_cpu_count(self, monkeypatch):
+        monkeypatch.setattr("citrus_scout.training.config.os.cpu_count", lambda: 8)
+        assert DataConfig().resolve_num_workers() == 4
+
+    def test_leaves_a_core_for_the_main_process(self, monkeypatch):
+        monkeypatch.setattr("citrus_scout.training.config.os.cpu_count", lambda: 3)
+        assert DataConfig().resolve_num_workers() == 2
+
+    def test_colab_two_cpus_does_not_oversubscribe(self, monkeypatch):
+        monkeypatch.setattr("citrus_scout.training.config.os.cpu_count", lambda: 2)
+        assert DataConfig().resolve_num_workers() == 1
+
+    def test_single_cpu_falls_back_to_main_process(self, monkeypatch):
+        monkeypatch.setattr("citrus_scout.training.config.os.cpu_count", lambda: 1)
+        assert DataConfig().resolve_num_workers() == 0
+
+    def test_unknown_cpu_count_does_not_crash(self, monkeypatch):
+        # os.cpu_count() is documented as possibly returning None.
+        monkeypatch.setattr("citrus_scout.training.config.os.cpu_count", lambda: None)
+        assert DataConfig().resolve_num_workers() == 0
+
+    def test_never_negative(self, monkeypatch):
+        monkeypatch.setattr("citrus_scout.training.config.os.cpu_count", lambda: 0)
+        assert DataConfig().resolve_num_workers() >= 0
+
+
+class TestShouldStop:
+    """When to end a run.
+
+    The bug this guards: PR-AUC is capped at 1.0, so a saturated run cannot beat
+    its own best. Compared strictly, every epoch after the peak counts as a
+    regression and the run dies at `patience` while still training fine.
+    """
+
+    def _call(self, pr_auc, best, stalled=0, patience=5, min_delta=1e-4):
+        return should_stop(
+            pr_auc=pr_auc,
+            best_pr_auc=best,
+            epochs_without_improvement=stalled,
+            patience=patience,
+            min_delta=min_delta,
+        )
+
+    def test_clear_gain_resets_the_counter(self):
+        stop, stalled, _ = self._call(0.80, 0.70, stalled=3)
+        assert not stop
+        assert stalled == 0
+
+    def test_no_gain_increments_the_counter(self):
+        stop, stalled, _ = self._call(0.70, 0.75, stalled=2)
+        assert not stop
+        assert stalled == 3
+
+    def test_stops_once_patience_is_exhausted(self):
+        stop, _, reason = self._call(0.70, 0.75, stalled=4, patience=5)
+        assert stop
+        assert "no PR-AUC gain" in reason
+
+    def test_gain_below_min_delta_does_not_count(self):
+        # Fourth-decimal noise is not progress; without a floor patience never
+        # expires on a plateau.
+        stop, stalled, _ = self._call(0.9000 + 1e-6, 0.9000, stalled=1, min_delta=1e-4)
+        assert not stop
+        assert stalled == 2
+
+    def test_gain_above_min_delta_counts(self):
+        stop, stalled, _ = self._call(0.90 + 1e-3, 0.90, stalled=1, min_delta=1e-4)
+        assert not stop
+        assert stalled == 0
+
+    def test_saturated_metric_stops_with_an_honest_reason(self):
+        # The regression: a perfect score used to sit out `patience` epochs and
+        # then report a plateau. It is not a plateau, it is an exhausted metric.
+        stop, _, reason = self._call(1.0, 1.0, stalled=0)
+        assert stop
+        assert "saturated" in reason
+
+    def test_saturation_does_not_depend_on_patience(self):
+        stop, _, reason = self._call(1.0, 1.0, stalled=0, patience=None)
+        assert stop
+        assert "saturated" in reason
+
+    def test_patience_none_disables_early_stopping(self):
+        stop, stalled, reason = self._call(0.50, 0.90, stalled=99, patience=None)
+        assert not stop
+        assert reason is None
+        assert stalled == 100
+
+    def test_a_run_that_keeps_improving_is_never_stopped(self):
+        # The shape of the original bug, as a sequence: monotonic gains below
+        # saturation must survive any patience.
+        best, stalled = -1.0, 0
+        for pr_auc in [0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95, 0.97]:
+            stop, stalled, _ = self._call(pr_auc, best, stalled=stalled, patience=3)
+            assert not stop, f"stopped early at {pr_auc}"
+            best = max(best, pr_auc)
+
+    def test_a_flat_run_is_stopped(self):
+        best, stalled, stops = 0.90, 0, 0
+        for _ in range(6):
+            stop, stalled, _ = self._call(0.90, best, stalled=stalled, patience=3)
+            if stop:
+                stops += 1
+                break
+        assert stops == 1
