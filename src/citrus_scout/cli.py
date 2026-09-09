@@ -206,5 +206,28 @@ def evaluate_command(
     )
 
 
+@app.command("uncertainty")
+def uncertainty_command(
+    checkpoint: Path = typer.Option(..., "--checkpoint", help="Path to a saved model."),
+    archive: Path | None = typer.Option(None, "--archive", help="Packaged archive to use."),
+    split: str = typer.Option("test", help="Which split to evaluate."),
+    passes: int = typer.Option(20, help="Stochastic forward passes. Cost scales linearly."),
+    target_specificity: float = typer.Option(
+        0.99, help="Specificity defining the alert threshold before triage."
+    ),
+) -> None:
+    """Quantify uncertainty with MC Dropout and triage predictions by confidence."""
+    from citrus_scout.evaluation.report import report_uncertainty
+
+    report_uncertainty(
+        checkpoint,
+        archive=archive,
+        split=split,
+        passes=passes,
+        target_specificity=target_specificity,
+        console=console,
+    )
+
+
 if __name__ == "__main__":
     app()
