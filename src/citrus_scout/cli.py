@@ -229,5 +229,24 @@ def uncertainty_command(
     )
 
 
+@app.command("per-class")
+def per_class_command(
+    checkpoint: Path = typer.Option(..., "--checkpoint", help="Path to a saved model."),
+    archive: Path | None = typer.Option(None, "--archive", help="Packaged archive to use."),
+    split: str = typer.Option("test", help="Which split to evaluate."),
+    show_matrix: bool = typer.Option(True, help="Print the confusion matrix."),
+) -> None:
+    """Report per-class recall and what the model confuses, tagged by local relevance."""
+    from citrus_scout.evaluation.report import report_per_class
+
+    report_per_class(
+        checkpoint,
+        archive=archive,
+        split=split,
+        show_matrix=show_matrix,
+        console=console,
+    )
+
+
 if __name__ == "__main__":
     app()

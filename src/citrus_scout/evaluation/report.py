@@ -27,6 +27,12 @@ from citrus_scout.evaluation.calibration import (
     expected_calibration_error,
 )
 from citrus_scout.evaluation.metrics import classification_report
+from citrus_scout.evaluation.per_class import (
+    actionable_recall,
+    confusion_matrix,
+    per_class_metrics,
+    top_confusions,
+)
 from citrus_scout.evaluation.uncertainty import (
     mc_dropout_predict,
     uncertainty_separates_errors,
@@ -358,4 +364,147 @@ def report_uncertainty(
         "separation": separation,
         "triage_counts": {name: int(mask.sum()) for name, mask in masks.items()},
         "threshold": affected_threshold,
+    }
+
+
+def report_per_class(
+    checkpoint: Path,
+    *,
+    archive: Path | None = None,
+    split: str = "test",
+    show_matrix: bool = True,
+    console: Console | None = None,
+) -> dict:
+    """Report per-class performance and what the model confuses.
+
+    Most useful on a multi-class checkpoint (`binary: false`). On a binary one it
+    still runs, but the only confusion available is healthy against affected, which
+    the operating-point table already covers.
+    """
+    console = console or Console()
+    device = select_device("auto")
+
+    model, config, classes = load_checkpoint(checkpoint, device)
+    loader = build_eval_loader(config, split, archive=archive)
+
+    logits, labels = collect_logits(model, loader, device)
+    predictions = logits.argmax(axis=1)
+
+    console.print(f"\ncheckpoint: {checkpoint}")
+    console.print(f"split: {split}, n={len(labels)}, {len(classes)} classes")
+
+    if len(classes) == 2:
+        console.print(
+            "[yellow]This is a binary checkpoint.[/yellow] Per-class structure only "
+            "becomes informative with binary: false in the config, which keeps the "
+            "original disease labels."
+        )
+
+    metrics = per_class_metrics(labels, predictions, classes)
+
+    table = Table(title="Per-class performance")
+    table.add_column("class")
+    table.add_column("n", justify="right")
+    table.add_column("recall", justify="right")
+    table.add_column("precision", justify="right")
+    table.add_column("F1", justify="right")
+    table.add_column("in Murcia")
+
+    for metric in sorted(metrics, key=lambda m: m.support, reverse=True):
+        relevance = metric.relevance.value
+        colour = {
+            "present": "green",
+            "absent": "dim",
+            "nonspecific": "yellow",
+            "healthy": "cyan",
+        }.get(relevance, "white")
+        table.add_row(
+            metric.label,
+            str(metric.support),
+            f"{metric.recall:.1%}" if metric.support else "-",
+            f"{metric.precision:.1%}" if metric.support else "-",
+            f"{metric.f1:.3f}" if metric.support else "-",
+            f"[{colour}]{relevance}[/{colour}]",
+        )
+    console.print(table)
+
+    summary = actionable_recall(metrics)
+    if summary["n_actionable_classes"] and summary["n_absent_classes"]:
+        console.print(
+            f"mean recall on the {summary['n_actionable_classes']} locally relevant "
+            f"classes: [bold]{summary['actionable_mean_recall']:.1%}[/bold]"
+        )
+        console.print(
+            f"mean recall on the {summary['n_absent_classes']} classes absent from "
+            f"Spain: {summary['absent_mean_recall']:.1%}"
+        )
+        if summary["absent_mean_recall"] > summary["actionable_mean_recall"] + 0.05:
+            console.print(
+                "[red]The model is better at the diseases that do not occur here.[/red] "
+                "The aggregate score is being carried by classes no Murcian grower can "
+                "act on."
+            )
+
+    confusions = top_confusions(labels, predictions, classes, limit=10)
+    if confusions:
+        pairs = Table(title="Most frequent confusions, by rate")
+        pairs.add_column("true")
+        pairs.add_column("predicted as")
+        pairs.add_column("n", justify="right")
+        pairs.add_column("rate", justify="right")
+        pairs.add_column("field cost")
+        for pair in confusions:
+            pairs.add_row(
+                pair.true_label,
+                pair.predicted_label,
+                str(pair.count),
+                f"{pair.rate:.1%}",
+                "[red]costly[/red]" if pair.costly else "[dim]free[/dim]",
+            )
+        console.print(pairs)
+        console.print(
+            "[dim]'free' means both classes are absent from Spain, so confusing them "
+            "changes no decision in a Murcian grove.[/dim]"
+        )
+    else:
+        console.print("no confusions: every prediction was correct")
+
+    if show_matrix and len(classes) <= 12:
+        matrix = confusion_matrix(labels, predictions, n_classes=len(classes))
+        grid = Table(title="Confusion matrix (rows true, columns predicted)")
+        grid.add_column("")
+        for label in classes:
+            grid.add_column(label[:8], justify="right")
+        for index, label in enumerate(classes):
+            cells = [
+                f"[bold]{matrix[index, j]}[/bold]" if index == j else str(matrix[index, j])
+                for j in range(len(classes))
+            ]
+            grid.add_row(label[:14], *cells)
+        console.print(grid)
+
+    return {
+        "per_class": [
+            {
+                "label": m.label,
+                "support": m.support,
+                "recall": m.recall,
+                "precision": m.precision,
+                "f1": m.f1,
+                "relevance": m.relevance.value,
+                "actionable": m.actionable,
+            }
+            for m in metrics
+        ],
+        "actionable_summary": summary,
+        "confusions": [
+            {
+                "true": c.true_label,
+                "predicted": c.predicted_label,
+                "count": c.count,
+                "rate": c.rate,
+                "costly": c.costly,
+            }
+            for c in confusions
+        ],
     }
