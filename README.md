@@ -41,7 +41,13 @@ is therefore not reproducible here.**
 
 ## Status
 
-Phase 0: building the classification pipeline on public leaf datasets.
+Phase 0 complete: the pipeline trains, evaluates, calibrates, quantifies uncertainty
+and reports where the model looks. A baseline run on the public leaf datasets reaches
+PR-AUC 1.0 on its test split, which measures the task being easy rather than the problem
+being solved, and is why the evaluation tooling exists.
+
+The binding constraint now is data, not code: real UAV imagery over Murcian groves with
+agronomic ground truth. Nothing in this repository improves until that exists.
 
 ## Installation
 
@@ -84,9 +90,34 @@ uv run citrus-scout data package
 # Train
 uv run citrus-scout train --config configs/leaf_baseline.yaml
 
-# Evaluate, reporting PPV at real field prevalence
+# Evaluate, reporting PPV at real field prevalence plus calibration
 uv run citrus-scout evaluate --checkpoint runs/leaf_baseline/best.pt
+
+# Uncertainty and triage: which trees a technician should actually visit
+uv run citrus-scout uncertainty --checkpoint runs/leaf_baseline/best.pt
+
+# Per-class recall and confusions, weighted by what occurs in Murcia
+uv run citrus-scout per-class --checkpoint runs/leaf_baseline/best.pt
+
+# Where the model looks, flagging background shortcuts
+uv run citrus-scout attention --checkpoint runs/leaf_baseline/best.pt --save-to runs/cam
 ```
+
+### Reading the evaluation
+
+Four commands, answering four different questions:
+
+| Command | Question | What to watch |
+|---|---|---|
+| `evaluate` | How good is it? | PPV at field prevalence, not PR-AUC |
+| `uncertainty` | Where should a human look? | Whether uncertainty is higher on errors |
+| `per-class` | What does it confuse? | Recall on locally present vs absent diseases |
+| `attention` | Is it cheating? | Share of images explained by the frame border |
+
+`attention` is the one that checks the others. Every metric scores *what* the model
+answers; only the heatmap asks *where it looked*. With a near-perfect score those two
+hypotheses, genuinely easy task versus background shortcut, predict identical numbers
+everywhere else.
 
 ### Training on Colab
 
@@ -108,7 +139,7 @@ src/citrus_scout/
 ├── data/          # datasets, download, transforms
 ├── models/        # architectures and backbone factory
 ├── training/      # training loop, callbacks
-├── evaluation/    # metrics, uncertainty, calibration
+├── evaluation/    # metrics, calibration, uncertainty, per-class, Grad-CAM
 └── utils/         # config, seeding, logging
 configs/           # experiment configs (YAML)
 scripts/           # standalone utilities

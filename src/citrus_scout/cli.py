@@ -248,5 +248,30 @@ def per_class_command(
     )
 
 
+@app.command("attention")
+def attention_command(
+    checkpoint: Path = typer.Option(..., "--checkpoint", help="Path to a saved model."),
+    archive: Path | None = typer.Option(None, "--archive", help="Packaged archive to use."),
+    split: str = typer.Option("test", help="Which split to evaluate."),
+    limit: int = typer.Option(200, help="Images to sweep. Grad-CAM needs a backward pass each."),
+    save_to: Path | None = typer.Option(
+        None, "--save-to", help="Directory for overlay PNGs, worst border score first."
+    ),
+    save_count: int = typer.Option(12, help="How many overlays to save."),
+) -> None:
+    """Check where the model looks with Grad-CAM, flagging background shortcuts."""
+    from citrus_scout.evaluation.report import report_attention
+
+    report_attention(
+        checkpoint,
+        archive=archive,
+        split=split,
+        limit=limit,
+        save_to=save_to,
+        save_count=save_count,
+        console=console,
+    )
+
+
 if __name__ == "__main__":
     app()

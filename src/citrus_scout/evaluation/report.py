@@ -26,6 +26,12 @@ from citrus_scout.evaluation.calibration import (
     calibrate,
     expected_calibration_error,
 )
+from citrus_scout.evaluation.gradcam import (
+    GradCAM,
+    overlay,
+    resolve_target_layer,
+    summarise_attention,
+)
 from citrus_scout.evaluation.metrics import classification_report
 from citrus_scout.evaluation.per_class import (
     actionable_recall,
@@ -507,4 +513,134 @@ def report_per_class(
             }
             for c in confusions
         ],
+    }
+
+
+def report_attention(
+    checkpoint: Path,
+    *,
+    archive: Path | None = None,
+    split: str = "test",
+    limit: int = 200,
+    save_to: Path | None = None,
+    save_count: int = 12,
+    console: Console | None = None,
+) -> dict:
+    """Sweep a split with Grad-CAM and report whether attention sits on the leaf.
+
+    Every other metric scores what the model answers. This one asks where it looked,
+    which is the only way to tell a genuinely easy task from a model reading the
+    background. With PR-AUC at 1.0 those two hypotheses predict identical numbers
+    everywhere else.
+
+    `save_to` writes a sample of overlays as PNGs, worst border score first, so the
+    images most worth a human glance are the ones on disk.
+    """
+    console = console or Console()
+    device = select_device("auto")
+
+    model, config, classes = load_checkpoint(checkpoint, device)
+    loader = build_eval_loader(config, split, archive=archive)
+    target_layer = resolve_target_layer(model, config.model.backbone)
+
+    console.print(f"\ncheckpoint: {checkpoint}")
+    console.print(f"split: {split}, target layer: {target_layer}")
+
+    summaries = []
+    worst: list[tuple[float, torch.Tensor, np.ndarray, int]] = []
+    seen = 0
+
+    with GradCAM(model, target_layer) as cam:
+        for images, labels in loader:
+            if seen >= limit:
+                break
+            images = images.to(device)
+            maps = cam.heatmap(images)
+
+            for index in range(len(maps)):
+                if seen >= limit:
+                    break
+                summary = summarise_attention(maps[index])
+                summaries.append(summary)
+                if save_to is not None:
+                    worst.append(
+                        (
+                            summary.border_excess,
+                            images[index].cpu(),
+                            maps[index],
+                            int(labels[index]),
+                        )
+                    )
+                seen += 1
+
+    if not summaries:
+        console.print("[red]no images evaluated[/red]")
+        return {"n": 0}
+
+    border = np.array([s.border_excess for s in summaries])
+    centre = np.array([s.centre_fraction for s in summaries])
+    concentration = np.array([s.concentration for s in summaries])
+    suspect = np.array([s.looks_like_background_shortcut() for s in summaries])
+
+    table = Table(title=f"Attention over {len(summaries)} images")
+    table.add_column("statistic")
+    table.add_column("median", justify="right")
+    table.add_column("p90", justify="right")
+    table.add_row(
+        "border excess (1.0 = proportional)",
+        f"{np.median(border):.2f}x",
+        f"{np.quantile(border, 0.9):.2f}x",
+    )
+    table.add_row("centre share", f"{np.median(centre):.1%}", f"{np.quantile(centre, 0.9):.1%}")
+    table.add_row(
+        "concentration", f"{np.median(concentration):.1%}", f"{np.quantile(concentration, 0.9):.1%}"
+    )
+    console.print(table)
+
+    share = float(suspect.mean())
+    console.print(
+        f"images where the border draws disproportionate attention: "
+        f"[bold]{int(suspect.sum())} of {len(summaries)} ({share:.1%})[/bold]"
+    )
+
+    if share > 0.25:
+        console.print(
+            "[red]A quarter or more of the images are explained by their edges.[/red] "
+            "On close-range leaf photographs the edges hold no diagnostic information, "
+            "so this is the signature of a model keying on the background. Expect the "
+            "score not to survive a change of viewpoint."
+        )
+    elif share > 0.10:
+        console.print(
+            "[yellow]A minority of images lean on the border.[/yellow] Worth looking at "
+            "the saved overlays before trusting the headline metric."
+        )
+    else:
+        console.print(
+            "[green]Attention sits mostly away from the frame edges.[/green] Consistent "
+            "with the model reading the leaf, though it does not prove the features "
+            "transfer to aerial imagery."
+        )
+
+    if save_to is not None and worst:
+        from PIL import Image
+
+        save_to.mkdir(parents=True, exist_ok=True)
+        worst.sort(key=lambda row: row[0], reverse=True)
+
+        for rank, (excess, image, heatmap, label) in enumerate(worst[:save_count]):
+            name = classes[label] if label < len(classes) else str(label)
+            path = save_to / f"{rank:02d}_excess{excess:.2f}_{name}.png"
+            Image.fromarray(overlay(image, heatmap)).save(path)
+
+        console.print(
+            f"saved {min(save_count, len(worst))} overlays to {save_to}, worst border score first"
+        )
+
+    return {
+        "n": len(summaries),
+        "median_border_excess": float(np.median(border)),
+        "median_centre_fraction": float(np.median(centre)),
+        "suspect_share": share,
+        "target_layer": target_layer,
     }
