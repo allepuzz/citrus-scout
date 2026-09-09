@@ -235,3 +235,31 @@ def should_stop(
         return True, stalled, "PR-AUC saturated at 1.0000: the task is too easy to rank on"
 
     return False, stalled, None
+
+
+@torch.no_grad()
+def collect_logits(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run the model over a loader, returning raw logits and labels.
+
+    Calibration needs logits, not probabilities: temperature scaling divides them
+    before the softmax, and a softmax output cannot be inverted back without
+    knowing the temperature that produced it. `evaluate` deliberately returns
+    probabilities because that is what the metrics consume, so this is a separate
+    pass for a different consumer.
+    """
+    model.eval()
+
+    all_logits: list[np.ndarray] = []
+    all_labels: list[np.ndarray] = []
+
+    for images, labels in loader:
+        images = images.to(device, non_blocking=True)
+        logits = model(images)
+        all_logits.append(logits.float().cpu().numpy())
+        all_labels.append(labels.numpy())
+
+    return np.concatenate(all_logits), np.concatenate(all_labels)
