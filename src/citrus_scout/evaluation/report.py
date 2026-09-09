@@ -81,7 +81,7 @@ def build_eval_loader(
         dataset,
         batch_size=config.data.batch_size,
         shuffle=False,
-        num_workers=config.data.num_workers,
+        num_workers=config.data.resolve_num_workers(),
         pin_memory=torch.cuda.is_available(),
     )
 
