@@ -41,7 +41,13 @@ is therefore not reproducible here.**
 
 ## Status
 
-Phase 0: building the classification pipeline on public leaf datasets.
+Phase 0 complete: the pipeline trains, evaluates, calibrates, quantifies uncertainty
+and reports where the model looks. A baseline run on the public leaf datasets reaches
+PR-AUC 1.0 on its test split, which measures the task being easy rather than the problem
+being solved, and is why the evaluation tooling exists.
+
+The binding constraint now is data, not code: real UAV imagery over Murcian groves with
+agronomic ground truth. Nothing in this repository improves until that exists.
 
 ## Installation
 
@@ -133,7 +139,7 @@ src/citrus_scout/
 ├── data/          # datasets, download, transforms
 ├── models/        # architectures and backbone factory
 ├── training/      # training loop, callbacks
-├── evaluation/    # metrics, uncertainty, calibration
+├── evaluation/    # metrics, calibration, uncertainty, per-class, Grad-CAM
 └── utils/         # config, seeding, logging
 configs/           # experiment configs (YAML)
 scripts/           # standalone utilities
