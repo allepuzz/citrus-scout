@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import torch
 from rich.console import Console
 from rich.table import Table
@@ -26,6 +27,10 @@ from citrus_scout.evaluation.calibration import (
     expected_calibration_error,
 )
 from citrus_scout.evaluation.metrics import classification_report
+from citrus_scout.evaluation.uncertainty import (
+    mc_dropout_predict,
+    uncertainty_separates_errors,
+)
 from citrus_scout.models.classifier import build_model, select_device
 from citrus_scout.training.config import TrainingConfig
 from citrus_scout.training.loop import collect_logits, evaluate
@@ -244,4 +249,113 @@ def _report_calibration(
         "ece_calibrated": ece_scaled,
         "fit_summary": str(fit_report),
         "operating_points": calibrated_report["operating_points"],
+    }
+
+
+def report_uncertainty(
+    checkpoint: Path,
+    *,
+    archive: Path | None = None,
+    split: str = "test",
+    passes: int = 20,
+    target_specificity: float = 0.99,
+    console: Console | None = None,
+) -> dict:
+    """Run MC Dropout and report what the uncertainty would do to a technician's day.
+
+    The table that matters is the triage split. A threshold alone gives one number,
+    the alert count; uncertainty splits those alerts into the ones worth walking to
+    and the ones the model is quietly unsure about.
+    """
+    console = console or Console()
+    device = select_device("auto")
+
+    model, config, classes = load_checkpoint(checkpoint, device)
+    loader = build_eval_loader(config, split, archive=archive)
+
+    console.print(f"\ncheckpoint: {checkpoint}")
+    console.print(f"split: {split}, classes={classes}")
+    console.print(f"running {passes} stochastic passes...")
+
+    result = mc_dropout_predict(model, loader, device, passes=passes)
+
+    summary = Table(title=f"Uncertainty over {passes} MC Dropout passes")
+    summary.add_column("statistic")
+    summary.add_column("mean", justify="right")
+    summary.add_column("max", justify="right")
+    summary.add_row(
+        "std across passes",
+        f"{result.std_probability.mean():.4f}",
+        f"{result.std_probability.max():.4f}",
+    )
+    summary.add_row(
+        "predictive entropy",
+        f"{result.predictive_entropy.mean():.4f}",
+        f"{result.predictive_entropy.max():.4f}",
+    )
+    summary.add_row(
+        "epistemic (MI)",
+        f"{result.mutual_information.mean():.4f}",
+        f"{result.mutual_information.max():.4f}",
+    )
+    console.print(summary)
+
+    separation = uncertainty_separates_errors(result)
+    if separation["separates"] is None:
+        console.print(
+            f"[yellow]No errors on this split ({separation['n_errors']} wrong), so "
+            "whether uncertainty tracks mistakes cannot be measured here.[/yellow] "
+            "That is a property of the test set being easy, not evidence the signal works."
+        )
+    elif separation["separates"]:
+        console.print(
+            f"[green]Uncertainty tracks errors:[/green] mean epistemic uncertainty is "
+            f"{separation['ratio']:.1f}x higher on the {separation['n_errors']} wrong "
+            "predictions than on the right ones. Ranking the queue by it is worth the cost."
+        )
+    else:
+        console.print(
+            "[red]Uncertainty does not track errors on this split.[/red] Wrong predictions "
+            "are no more uncertain than right ones, so the extra passes buy nothing and "
+            "the ordering carries no information."
+        )
+
+    # Triage at the project's preferred operating point: high specificity, because
+    # the cost of a false alert is a wasted walk.
+    affected_threshold = (
+        float(np.quantile(result.mean_probability[result.labels == 0], target_specificity))
+        if (result.labels == 0).any()
+        else 0.5
+    )
+
+    masks = result.triage(
+        affected_threshold=affected_threshold,
+        healthy_threshold=min(1.0 - affected_threshold, affected_threshold),
+    )
+
+    triage = Table(
+        title=f"Triage at {target_specificity:.0%} specificity (threshold {affected_threshold:.3f})"
+    )
+    triage.add_column("bucket")
+    triage.add_column("trees", justify="right")
+    triage.add_column("share", justify="right")
+    triage.add_column("what happens")
+
+    total = len(result)
+    for name, description in (
+        ("act", "flagged, inspection pass"),
+        ("inspect", "queued for a human look"),
+        ("ignore", "skipped"),
+    ):
+        count = int(masks[name].sum())
+        triage.add_row(name, str(count), f"{count / total:.1%}", description)
+    console.print(triage)
+
+    return {
+        "passes": passes,
+        "mean_std": float(result.std_probability.mean()),
+        "mean_epistemic": float(result.mutual_information.mean()),
+        "separation": separation,
+        "triage_counts": {name: int(mask.sum()) for name, mask in masks.items()},
+        "threshold": affected_threshold,
     }
