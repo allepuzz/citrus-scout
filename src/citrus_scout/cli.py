@@ -180,11 +180,30 @@ def evaluate_command(
     checkpoint: Path = typer.Option(..., "--checkpoint", help="Path to a saved model."),
     archive: Path | None = typer.Option(None, "--archive", help="Packaged archive to use."),
     split: str = typer.Option("test", help="Which split to evaluate."),
+    calibrate_on: str | None = typer.Option(
+        "val",
+        "--calibrate-on",
+        help="Split to fit the temperature on. Must differ from --split. Pass 'none' to skip.",
+    ),
 ) -> None:
     """Evaluate a checkpoint and report metrics at field prevalence."""
     from citrus_scout.evaluation.report import evaluate_checkpoint
 
-    evaluate_checkpoint(checkpoint, archive=archive, split=split, console=console)
+    fit_split = None if calibrate_on in (None, "none", "") else calibrate_on
+    if fit_split == split:
+        raise typer.BadParameter(
+            f"--calibrate-on ({fit_split}) must differ from --split ({split}): "
+            "fitting and measuring on the same data reports a calibration that "
+            "does not hold anywhere else."
+        )
+
+    evaluate_checkpoint(
+        checkpoint,
+        archive=archive,
+        split=split,
+        calibrate_on=fit_split,
+        console=console,
+    )
 
 
 if __name__ == "__main__":

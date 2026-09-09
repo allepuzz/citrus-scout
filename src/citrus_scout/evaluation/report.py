@@ -20,9 +20,15 @@ from citrus_scout.data.archive_dataset import load_packaged_splits
 from citrus_scout.data.build import binary_labels, build_splits
 from citrus_scout.data.leaf_dataset import LeafDataset
 from citrus_scout.data.transforms import eval_transform
+from citrus_scout.evaluation.calibration import (
+    apply_temperature,
+    calibrate,
+    expected_calibration_error,
+)
+from citrus_scout.evaluation.metrics import classification_report
 from citrus_scout.models.classifier import build_model, select_device
 from citrus_scout.training.config import TrainingConfig
-from citrus_scout.training.loop import evaluate
+from citrus_scout.training.loop import collect_logits, evaluate
 
 
 def load_checkpoint(
@@ -91,9 +97,16 @@ def evaluate_checkpoint(
     *,
     archive: Path | None = None,
     split: str = "test",
+    calibrate_on: str | None = "val",
     console: Console | None = None,
 ) -> dict:
-    """Evaluate a checkpoint and print a field-relevant report."""
+    """Evaluate a checkpoint and print a field-relevant report.
+
+    When `calibrate_on` names a split, a temperature is fitted there and the
+    operating points are recomputed from the calibrated probabilities. The fit
+    split must differ from the evaluated one, or the reported calibration is
+    measured on the data that produced it.
+    """
     console = console or Console()
     device = select_device("auto")
 
@@ -138,6 +151,17 @@ def evaluate_checkpoint(
         )
     console.print(operating)
 
+    if calibrate_on is not None and calibrate_on != split:
+        report["calibration"] = _report_calibration(
+            model,
+            config,
+            device,
+            evaluated_split=split,
+            fit_split=calibrate_on,
+            archive=archive,
+            console=console,
+        )
+
     console.print(
         "\n[yellow]Read the PPV column, not PR-AUC.[/yellow] This test set is "
         f"{report['test_prevalence']:.0%} affected; a real grove runs "
@@ -146,3 +170,78 @@ def evaluate_checkpoint(
     )
 
     return report
+
+
+def _report_calibration(
+    model: nn.Module,
+    config: TrainingConfig,
+    device: torch.device,
+    *,
+    evaluated_split: str,
+    fit_split: str,
+    archive: Path | None,
+    console: Console,
+) -> dict:
+    """Fit a temperature on `fit_split` and report its effect on `evaluated_split`.
+
+    The temperature is fitted on one split and measured on another, which is the
+    only order that gives an honest number. Ranking metrics are not recomputed:
+    dividing logits by a positive scalar is monotonic, so PR-AUC and ROC-AUC cannot
+    move. Thresholds can, which is the whole point.
+    """
+    fit_loader = build_eval_loader(config, fit_split, archive=archive)
+    eval_loader = build_eval_loader(config, evaluated_split, archive=archive)
+
+    fit_logits, fit_labels = collect_logits(model, fit_loader, device)
+    eval_logits, eval_labels = collect_logits(model, eval_loader, device)
+
+    temperature, fit_report = calibrate(fit_logits, fit_labels)
+
+    raw = apply_temperature(eval_logits, 1.0)
+    scaled = apply_temperature(eval_logits, temperature)
+
+    ece_raw = expected_calibration_error(eval_labels, raw)
+    ece_scaled = expected_calibration_error(eval_labels, scaled)
+
+    table = Table(title=f"Calibration (T fitted on {fit_split}, measured on {evaluated_split})")
+    table.add_column("metric")
+    table.add_column("raw", justify="right")
+    table.add_column("calibrated", justify="right")
+    table.add_row("ECE", f"{ece_raw:.4f}", f"{ece_scaled:.4f}")
+    table.add_row("temperature", "1.000", f"{temperature:.3f}")
+    console.print(table)
+
+    calibrated_report = classification_report(
+        eval_labels, scaled, field_prevalence=config.field_prevalence
+    )
+
+    operating = Table(title="Operating points after calibration")
+    operating.add_column("threshold", justify="right")
+    operating.add_column("sensitivity", justify="right")
+    operating.add_column("specificity", justify="right")
+    operating.add_column("PPV", justify="right")
+    for point in calibrated_report["operating_points"]:
+        operating.add_row(
+            f"{point.threshold:.3f}",
+            f"{point.sensitivity:.1%}",
+            f"{point.specificity:.1%}",
+            f"{point.ppv:.1%}",
+        )
+    console.print(operating)
+
+    if temperature > 1.05:
+        console.print(
+            f"[yellow]T={temperature:.2f} > 1: the model was overconfident.[/yellow] "
+            "Raw probabilities sat closer to 0 and 1 than the outcomes justified."
+        )
+    elif temperature < 0.95:
+        console.print(f"[yellow]T={temperature:.2f} < 1: the model was underconfident.[/yellow]")
+
+    return {
+        "temperature": temperature,
+        "fit_split": fit_split,
+        "ece_raw": ece_raw,
+        "ece_calibrated": ece_scaled,
+        "fit_summary": str(fit_report),
+        "operating_points": calibrated_report["operating_points"],
+    }
